@@ -4,6 +4,7 @@ class Population
  def initialize( people )
    @time = [ 0.0 ]
    @state = {}
+   @now = {}
    s['humans'] = [ people.to_f ]
  end
 
@@ -11,7 +12,7 @@ class Population
    Gnuplot.open do |gp|
      Gnuplot::Plot.new( gp ) do |plot|
   
-       plot.xrange "[0:#{time.last}]"
+       plot.xrange "[#{time.first}:#{time.last}]"
        plot.title  "Zombie Attack"
        plot.ylabel "Population"
        plot.xlabel "time"
@@ -29,6 +30,18 @@ class Population
          ds
        end
        
+       if false
+         ratio=[]
+         s['humans'].each_with_index do |h,i|
+           ratio << s['zombies'][i] * 10.0
+         end
+         plot.data << Gnuplot::DataSet.new( [time,ratio ] ) do |ds|
+           ds.title = "Product"
+           ds.with = "lines lc rgb \"black\""
+           ds.linewidth = 1
+           ds
+         end
+       end
      end
    end
  end
@@ -39,6 +52,15 @@ class Population
      out << "#{var}: #{history.last}\n"
    end
    out
+ end
+
+ def clip( from, to, dt )
+   x1 = from/dt
+   x2 = to/dt
+   @time = @time[x1..x2]
+   @state.each do |var,arr|
+     @state[var] = arr[x1..x2]
+   end
  end
 
  def s ; @state ; end
@@ -53,7 +75,7 @@ class Population
    history.last
  end
 
- attr_accessor :humans,:zombies,:corpses, :time
+ attr_accessor :time,:now
  
 end
 
@@ -68,11 +90,28 @@ class Model
  def step( pop )
    deltas = change(pop)
    pop.s.each do |var,history|
-     history << history.last + deltas[var]
+     newval = history.last + deltas[var]
+     newval = 0.0 if newval < 0.0
+     history << newval
    end
    pop.time << pop.time.last + @dt
    pop
  end
+
+ def at( pop, t )
+   if ( (t - pop.time.last).abs < (@dt/2.0) )
+     yield
+   end
+ end
+
+ def every( pop, t )
+   times = ( pop.time.last / t ).to_i
+   rem = pop.time.last - ( times * t )
+   if ( rem.abs < (@dt/2) )
+     yield
+   end
+ end
+   
 end
 
 class Orig < Model
@@ -94,25 +133,27 @@ class Mine < Model
   def change( old )
     c = Hash.new
 
-    newzombies = (old.time.length==50)?20:0;
-
-    c['humans'] = -@dt*p['beta']*old['humans']*old['zombies']
+    c['humans'] = @dt*(-p['beta']*old['humans']*old['zombies'] +
+                       p['pi']*old['humans'])
     c['zombies'] = @dt*(p['beta']*old['humans']*old['zombies'] -
                         p['alpha']*old['humans']*old['zombies'] +
-                        p['zeta']*old['corpses'] +
-                        newzombies )
+                        p['zeta']*old['corpses'] )
     c['corpses'] = @dt*(p['alpha']*old['humans']*old['zombies'] +
                         p['delta']*old['humans'] -
                         p['zeta']*old['corpses'] -
                         p['lambda']*old['corpses'])
+
+    at( old, 5 ) { c['zombies'] = c['zombies'] + p['epsilon']}
+
     c
  end
 end
 
 
 def run( pop, func, steps )
-  steps.times do
+  steps.times do |x|
     func.step( pop )
+    print "#{x}\t#{pop['humans']}\n" if ( x%25000 == 0 )
   end
   pop
 end
@@ -124,16 +165,18 @@ func1 = Orig.new( 0.01,
                   'zeta' => 0.0001, 
                   'delta' => 0.0001 )
 
-func2 = Mine.new( 1,
+func2 = Mine.new( 0.02,
                   'alpha' => 0.01, 
-                  'beta' => 0.0095, 
+                  'beta' => 0.0096, 
                   'zeta' => 0.0001, 
                   'delta' => 0.001,
-                  'lambda' => 0.01 )
-#func2 = Mine.new( 0.01, 0.0095, 0.0001, 0.001, 0.01, 1 )
+                  'lambda' => 0.01,
+                  'epsilon' => 10,
+                  'pi' => 0.00025 )
 
-
-run( exp1, func2, 2000 )
+run( exp1, func2, 200000 )
+print "plotting\n"
+#exp1.clip(850,855,0.05)
 exp1.plot
 puts exp1
 
