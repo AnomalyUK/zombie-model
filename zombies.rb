@@ -2,10 +2,9 @@ require 'gnuplot'
 
 class Population
  def initialize( people )
-   @humans = [ people.to_f ]
-   @zombies = [ 0.0 ]
-   @corpses = [ 0.0 ]
    @time = [ 0.0 ]
+   @state = {}
+   s['humans'] = [ people.to_f ]
  end
 
  def plot
@@ -17,13 +16,13 @@ class Population
        plot.ylabel "Population"
        plot.xlabel "time"
     
-       plot.data << Gnuplot::DataSet.new( [time,zombies] ) do |ds|
+       plot.data << Gnuplot::DataSet.new( [time,s['zombies'] ] ) do |ds|
          ds.title = "Zombies"
          ds.with = "lines lc rgb \"red\""
          ds.linewidth = 2
        end
 
-       plot.data << Gnuplot::DataSet.new( [time,humans] ) do |ds|
+       plot.data << Gnuplot::DataSet.new( [time,s['humans'] ] ) do |ds|
          ds.title = "Humans"
          ds.with = "lines lc rgb \"blue\""
          ds.linewidth = 2
@@ -35,60 +34,78 @@ class Population
  end
     
  def to_s
-   return "Humans: #{humans.last}\nZombies:#{zombies.last}\nCorpses:#{corpses.last}"
+   out=""
+   s.each do |var,history| 
+     out << "#{var}: #{history.last}\n"
+   end
+   out
+ end
+
+ def s ; @state ; end
+
+ def [] ( var )
+   history = s[var]
+   if ( history == nil )
+     history = Array.new
+     history << 0.0
+     s[var] = history
+   end
+   history.last
  end
 
  attr_accessor :humans,:zombies,:corpses, :time
+ 
 end
 
-class Orig
- def initialize( alpha, beta, zeta, delta, dt )
-   @a = alpha
-   @b = beta
-   @z = zeta
-   @d = delta
+class Model
+ def initialize( dt, params )
+   @params = params
    @dt = dt
  end
 
+ def p ; @params ; end
+
  def step( pop )
-   h = pop.humans.last
-   z = pop.zombies.last
-   c = pop.corpses.last
-
-   pop.humans << h + @dt*(-@b*h*z)
-   pop.zombies << z + @dt*(@b*h*z - @a*h*z + @z*c)
-   pop.corpses << c + @dt*(@a*h*z + @d*h - @z*c)
-
+   deltas = change(pop)
+   pop.s.each do |var,history|
+     history << history.last + deltas[var]
+   end
    pop.time << pop.time.last + @dt
-
    pop
  end
 end
 
-class Mine
- def initialize( alpha, beta, zeta, delta, lambda, dt )
-   @a = alpha
-   @b = beta
-   @z = zeta
-   @d = delta
-   @l = lambda
-   @dt = dt
+class Orig < Model
+
+ def change( old )
+   c = Hash.new
+   c['humans'] = -@dt*p['beta']*old['humans']*old['zombies']
+   c['zombies'] = @dt*(p['beta']*old['humans']*old['zombies'] -
+                      p['alpha']*old['humans']*old['zombies'] +
+                      p['zeta']*old['corpses'])
+   c['corpses'] = @dt*(p['alpha']*old['humans']*old['zombies'] +
+                      p['delta']*old['humans'] -
+                      p['zeta']*old['corpses'])
+   c
  end
+end
 
- def step( pop )
-   h = pop.humans.last
-   z = pop.zombies.last
-   c = pop.corpses.last
+class Mine < Model
+  def change( old )
+    c = Hash.new
 
-   newzombies = (pop.time.length==50)?20:0;
+    newzombies = (old.time.length==50)?20:0;
 
-   pop.humans << h + @dt*(-@b*h*z)
-   pop.zombies << z + @dt*(@b*h*z - @a*h*z + @z*c) + newzombies
-   pop.corpses << c + @dt*(@a*h*z + @d*h - @z*c - @l*c)
-
-   pop.time << pop.time.last + @dt
-
-   pop
+    c['humans'] = -@dt*p['beta']*old['humans']*old['zombies']
+    c['zombies'] = @dt*(p['beta']*old['humans']*old['zombies'] -
+                        p['alpha']*old['humans']*old['zombies'] +
+                        p['zeta']*old['corpses'] +
+                        newzombies )
+    c['corpses'] = @dt*(p['alpha']*old['humans']*old['zombies'] +
+                        p['delta']*old['humans'] -
+                        p['zeta']*old['corpses'] -
+                        p['lambda']*old['corpses'])
+    c
  end
 end
 
@@ -101,10 +118,22 @@ def run( pop, func, steps )
 end
 
 exp1 = Population.new(500)
-func1 = Orig.new( 0.005, 0.0095, 0.0001, 0.0001, 0.01 )
-func2 = Mine.new( 0.01, 0.0095, 0.0001, 0.001, 0.01, 1 )
+func1 = Orig.new( 0.01,
+                  'alpha' => 0.005, 
+                  'beta' => 0.0095, 
+                  'zeta' => 0.0001, 
+                  'delta' => 0.0001 )
+
+func2 = Mine.new( 1,
+                  'alpha' => 0.01, 
+                  'beta' => 0.0095, 
+                  'zeta' => 0.0001, 
+                  'delta' => 0.001,
+                  'lambda' => 0.01 )
+#func2 = Mine.new( 0.01, 0.0095, 0.0001, 0.001, 0.01, 1 )
 
 
 run( exp1, func2, 2000 )
 exp1.plot
 puts exp1
+
