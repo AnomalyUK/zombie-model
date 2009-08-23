@@ -1,5 +1,6 @@
 require 'gnuplot'
 
+# captures the history of a population of humans and zombies over time
 class Population
  def initialize( skip, dt, people )
    @time = Array.new
@@ -12,17 +13,23 @@ class Population
    @now['humans'] = people.to_f
  end
 
+ def scale( arr, mult )
+   arr.collect { |x| mult*x }
+ end
+
  def plot
    Gnuplot.open do |gp|
      Gnuplot::Plot.new( gp ) do |plot|
+
+       zombiescale=1000
   
        plot.xrange "[#{time.first}:#{time.last}]"
        plot.title  "Zombie Attack"
        plot.ylabel "Population"
        plot.xlabel "time"
     
-       plot.data << Gnuplot::DataSet.new( [time,s['zombies'] ] ) do |ds|
-         ds.title = "Zombies"
+       plot.data << Gnuplot::DataSet.new( [time,scale(s['zombies'],zombiescale) ] ) do |ds|
+         ds.title = "Zombies x #{zombiescale}"
          ds.with = "lines lc rgb \"red\""
          ds.linewidth = 2
        end
@@ -32,19 +39,6 @@ class Population
          ds.with = "lines lc rgb \"blue\""
          ds.linewidth = 2
          ds
-       end
-       
-       if false
-         ratio=[]
-         s['humans'].each_with_index do |h,i|
-           ratio << s['zombies'][i] * 10.0
-         end
-         plot.data << Gnuplot::DataSet.new( [time,ratio ] ) do |ds|
-           ds.title = "Product"
-           ds.with = "lines lc rgb \"black\""
-           ds.linewidth = 1
-           ds
-         end
        end
      end
    end
@@ -99,6 +93,8 @@ class Population
  attr_reader :dt,:clock
 end
 
+
+# Base class for evolving a Population
 class Model
  def initialize( params )
    @params = params
@@ -106,13 +102,16 @@ class Model
 
  def p ; @params ; end
 
+ def max(f1,f2) ; (f1>f2)?f1: f2 ; end
+
  def step( pop )
    update = Hash.new
    deltas = change(pop)
    deltas.each do |var,delta|
-     update[var] = pop[var] + delta
+     update[var] = max(pop[var] + delta,0.0)
    end
    pop << update
+   deltas
  end
 
  def at( pop, t )
@@ -129,90 +128,13 @@ class Model
    end
  end
    
-end
-
-class Orig < Model
-
- def change( old )
-   c = Hash.new
-   c['humans'] = -@dt*p['beta']*old['humans']*old['zombies']
-   c['zombies'] = @dt*(p['beta']*old['humans']*old['zombies'] -
-                      p['alpha']*old['humans']*old['zombies'] +
-                      p['zeta']*old['corpses'])
-   c['corpses'] = @dt*(p['alpha']*old['humans']*old['zombies'] +
-                      p['delta']*old['humans'] -
-                      p['zeta']*old['corpses'])
-   c
+ def run( pop, steps )
+   steps.times do |x|
+     moves = step( pop )
+     print "time\t#{x} x #{pop.dt}\n#{pop}\n" if ( x%25000 == 0 )
+   end
+   pop
  end
 end
 
-class Mine < Model
-  def change( old )
-    c = Hash.new
-    dt = old.dt
-
-    c['humans']  = dt*(-p['beta']*old['humans']*old['zombies'] +
-                      p['pi']*old['humans'])
-    c['zombies'] = dt*(p['beta']*old['humans']*old['zombies'] -
-                       p['alpha']*old['humans']*old['zombies'] +
-                       p['zeta']*old['corpses'] )
-    c['corpses'] = dt*(p['alpha']*old['humans']*old['zombies'] +
-                       p['delta']*old['humans'] -
-                       p['zeta']*old['corpses'] -
-                       p['lambda']*old['corpses'])
-
-    at( old, 5 ) { c['zombies'] = c['zombies'] + p['epsilon']}
-
-    c
- end
-end
-
-
-def run( pop, func, steps )
-  steps.times do |x|
-    func.step( pop )
-    print "#{x}\t#{pop['humans']}\n" if ( x%25000 == 0 )
-  end
-  pop
-end
-
-exp1 = Population.new(1000,0.02,500)
-func1 = Orig.new( 
-                  'alpha' => 0.005, 
-                  'beta' => 0.0095, 
-                  'zeta' => 0.0001, 
-                  'delta' => 0.0001 )
-
-func2 = Mine.new( 'alpha' => 0.01, 
-                  'beta' => 0.0096, 
-                  'zeta' => 0.0001, 
-                  'delta' => 0.001,
-                  'lambda' => 0.01,
-                  'epsilon' => 10,
-                  'pi' => 0.00025 )
-
-def test(e,f)
-#  ch1 = f.change( e )
-#  puts ch1
-
-  up = f.step( e )
-  puts e.now
-  up = f.step( e )
-  puts e.now
-  up = f.step( e )
-  puts e.now
-  up = f.step( e )
-  puts e.now
-
-  puts e.time
-end
-
-#test(exp1,func2)
-#exit
-
-run( exp1, func2, 200000 )
-print "plotting\n"
-#exp1.clip(850,855,0.05)
-exp1.plot
-puts exp1
 
