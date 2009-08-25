@@ -27,6 +27,6 @@ func2 = Rotting.new( 'alpha' => 0.01,
 func2.run( exp1, 500000 )
 print "plotting\n"
 #exp1.clip(850,855,0.05)
-exp1.plot
+#exp1.plot
 puts exp1
 

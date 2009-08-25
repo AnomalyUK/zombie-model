@@ -1,4 +1,7 @@
 require 'rotting'
+require 'csvplot'
+
+output = Zombie::CsvPlotter.new( "test4.out" )
 
 shock = 1.0
 shock = ARGV[0].to_f if ARGV[0]
@@ -14,22 +17,22 @@ shock = ARGV[0].to_f if ARGV[0]
 # supply of newly-risen zombies is so fast that the zombie level does not
 # stabilise, and humans are exterminated
 
-exp1 = Population.new(1000,0.01,483)
-exp1.now['corpses'] = 210.0
-exp1.now['zombies'] = 5.0/48
+exp1 = Population.new(1000,0.01,480)
+exp1.now['corpses'] = 200.0
+exp1.now['zombies'] = 5.0/24
 
 func2 = Rotting.new( 'alpha' => 0.01,
-                     'beta' => 0.0096, 
-                     'zeta' => 0.000096, 
+                     'beta' => 0.0096,
+                     'zeta' => 0.0002, 
                      'delta' => 0.00105,
                      'lambda' => 0.00232,
                      'zombies_in' => [[400,'humans',0,-shock],
                                       [400,'corpses',0,shock]],
-                     'pi' => 0.001 )
+                     'pi' => 0.002 )
 
 
 func2.run( exp1, 200000 )
 print "plotting\n"
-exp1.plot
+output.plot(exp1)
 puts exp1
 
